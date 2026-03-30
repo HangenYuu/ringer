@@ -155,3 +155,11 @@ configs/local/default.yaml
 
 # Aim logging
 .aim
+
+# Logging
+results*/
+sample/
+logs/
+jobscripts/
+*.o*
+CLAUDE.md

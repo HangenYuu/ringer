@@ -74,6 +74,7 @@ def reconstruct(
     out_dir: str,
     mean_distances_path: str,
     reconstruct_sidechains: bool = True,
+    add_hydrogens: bool = True,
     mean_angles_path: Optional[str] = None,
     std_angles_path: Optional[str] = None,
     angles_as_constraints: bool = False,
@@ -134,7 +135,8 @@ def reconstruct(
         # Pivot so we can get all samples for each feature from the outermost column
         coords_pivoted = coords_stacked.unstack(level="atom_idx")
         new_structure = {
-            feat_name: coords_pivoted[feat_name] for feat_name in coords_pivoted.columns.levels[0]
+            feat_name: coords_pivoted[feat_name]
+            for feat_name in coords_pivoted.columns.levels[0]
         }
         new_structure["atom_labels"] = structure["atom_labels"]
         return new_structure
@@ -165,7 +167,9 @@ def reconstruct(
         index_tensor = reconstructor.stacked_tuples
 
         positions = reconstructor.reconstruct(internals_tensor, index_tensor)
-        mol_opt = set_rdkit_geometries(mol_opt_no_h, positions, copy=True)
+        mol_opt = set_rdkit_geometries(
+            mol_opt_no_h, positions, add_hydrogens=add_hydrogens, copy=True
+        )
 
     mol_opt_path = mol_opt_dir / mol_name
     save_pickle(mol_opt_path, mol_opt)

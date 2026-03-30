@@ -21,6 +21,7 @@ dependencies:
   - conda-forge::rich
   - conda-forge::shellingham
   - conda-forge::typer
+  - conda-forge::mkl<2024.1
   - conda-forge::wandb
   - pip:
     - ray
