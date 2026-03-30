@@ -12,10 +12,10 @@ IDX_LIST=(
 
 MOL_DIR="data/cremp/test"
 SAMPLES_PATH="sample/samples.pickle"
-OUT_DIR="sample/reconstructed_mols/retry-noH"
+OUT_DIR="sample/reconstructed_mols/retry"
 MEAN_DIST_PATH="assets/models/conditional/training_mean_distances.json"
-LOG_DIR="sample/logs/reconstruct/retry-noH"
-NCPU="${NCPU:-32}"
+LOG_DIR="sample/logs/reconstruct/retry"
+NCPU="${NCPU:-64}"
 
 mkdir -p "$OUT_DIR" "$LOG_DIR"
 
@@ -32,7 +32,6 @@ for idx in "${IDX_LIST[@]}"; do
     "$OUT_DIR" \
     "$MEAN_DIST_PATH" \
     --ncpu "$NCPU" \
-    --no-add-hydrogens \
     > "$log_path" 2>&1; then
     echo "  success idx=${idx}"
   else
