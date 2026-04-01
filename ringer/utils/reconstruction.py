@@ -18,6 +18,7 @@ def reconstruct_ring(
     angles_as_constraints: bool = False,
     opt_init: Literal["best_dists", "average"] = "best_dists",
     skip_opt: bool = False,
+    drop_unsuccessful: bool = False,
     max_conf: Optional[int] = None,
     return_unsuccessful: bool = False,
     ncpu: int = 1,
@@ -37,6 +38,7 @@ def reconstruct_ring(
         angles_as_constraints: Use the bond angles as constraints instead of targets (default if structure does not contain bond angles).
         opt_init: Initialization method for the optimization.
         skip_opt: Just set the coordinates in sequence and don't run the optimization.
+        drop_unsuccessful: Drop conformers that fail reconstruction or optimization.
         max_conf: Reconstruct at most this many conformers.
         return_unsuccessful: Return the results objects of unsuccessful optimizations.
         ncpu: Number of processes to use.
@@ -59,13 +61,15 @@ def reconstruct_ring(
 
     # When reconstructing mol, use mean bond distances from training data
     bond_dists = pd.Series(
-        data=(bond_dist_dict[label] for label in structure["atom_labels"]), index=ring_idxs
+        data=(bond_dist_dict[label] for label in structure["atom_labels"]),
+        index=ring_idxs,
     )
 
     bond_angle_devs = None
     if angles_as_constraints:
         bond_angles = pd.Series(
-            data=(bond_angle_dict[label] for label in structure["atom_labels"]), index=ring_idxs
+            data=(bond_angle_dict[label] for label in structure["atom_labels"]),
+            index=ring_idxs,
         )
         if bond_angle_dev_dict is not None:
             bond_angle_devs = pd.Series(
@@ -88,24 +92,36 @@ def reconstruct_ring(
         return_result_obj=True,
     )
     inputs_list = []
+    conf_idxs = []
     for conf_idx, dihedrals in dihedral_df.iterrows():
         if not angles_as_constraints:
             bond_angles = angle_df.loc[conf_idx]
         inputs_list.append((bond_angles, dihedrals))
+        conf_idxs.append(conf_idx)
     if max_conf is not None:
         inputs_list = inputs_list[:max_conf]
+        conf_idxs = conf_idxs[:max_conf]
 
-    chunksize, extra = divmod(len(inputs_list), ncpu * 4)
-    if extra:
-        chunksize += 1
-    results = process_map(pfunc, inputs_list, max_workers=ncpu, chunksize=chunksize)
+    if inputs_list:
+        chunksize, extra = divmod(len(inputs_list), ncpu * 4)
+        if extra:
+            chunksize += 1
+        results = process_map(pfunc, inputs_list, max_workers=ncpu, chunksize=chunksize)
+    else:
+        results = []
 
-    coords_opt = [result[0] for result in results]
-    unsuccessful_results = {
-        conf_idx: result[1]
-        for conf_idx, result in zip(dihedral_df.index, results)
-        if not result[1].success
-    }
+    coords_opt = []
+    unsuccessful_results = {}
+    for conf_idx, result in zip(conf_idxs, results):
+        coords_i, result_i = result
+        if coords_i is None:
+            unsuccessful_results[conf_idx] = result_i
+            continue
+        if not result_i.success:
+            unsuccessful_results[conf_idx] = result_i
+            if drop_unsuccessful:
+                continue
+        coords_opt.append(coords_i)
 
     # Make a new mol where the ring atoms contain the new coordinates
     mol_opt = chem.set_atom_positions(mol, coords_opt)
@@ -119,11 +135,18 @@ def _to_cartesian_helper(
     inputs: Tuple[pd.Series, pd.Series],
     ring_internal_coords: internal_coords.RingInternalCoordinates,
     **kwargs: Any,
-) -> Union[pd.DataFrame, Tuple[pd.DataFrame, OptimizeResult]]:
+) -> Union[Tuple[pd.DataFrame, OptimizeResult], Tuple[None, OptimizeResult]]:
     """Helper function for to_cartesian."""
     bond_angles, dihedrals = inputs
-    return ring_internal_coords.to_cartesian(
-        angle_vals_target=bond_angles,
-        dihedral_vals_target=dihedrals,
-        **kwargs,
-    )
+    try:
+        return ring_internal_coords.to_cartesian(
+            angle_vals_target=bond_angles,
+            dihedral_vals_target=dihedrals,
+            **kwargs,
+        )
+    except Exception as exc:
+        result = OptimizeResult(
+            success=False,
+            message=f"Exception during reconstruction: {type(exc).__name__}: {exc}",
+        )
+        return None, result
