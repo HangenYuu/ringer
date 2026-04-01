@@ -67,6 +67,20 @@ def merge_samples(
     return merged_dict
 
 
+def subset_structure_conformers(structure: Dict[str, Any], conf_idxs: List[int]) -> Dict[str, Any]:
+    """Subset all dataframe fields in a structure to the given conformer indices.
+
+    Dataframe indices are reset to 0..N-1 so backbone and sidechain internals stay aligned.
+    """
+    subset = {}
+    for key, value in structure.items():
+        if isinstance(value, pd.DataFrame):
+            subset[key] = value.loc[conf_idxs].reset_index(drop=True)
+        else:
+            subset[key] = value
+    return subset
+
+
 def reconstruct(
     idx: int,
     mol_dir: str,
@@ -116,14 +130,32 @@ def reconstruct(
         angles_as_constraints=angles_as_constraints,
         opt_init=opt_init,
         skip_opt=skip_opt,
+        drop_unsuccessful=True,
         max_conf=max_conf,
-        return_unsuccessful=False,  # Don't save unsuccessful optimizations for now
+        return_unsuccessful=True,
         ncpu=ncpu,
     )
     end_time = time.time()
     logging.info(f"Reconstruction took {end_time - start_time:.2f} seconds")
 
-    mol_opt = result[0]
+    mol_opt, coords_opt, unsuccessful_results = result
+
+    processed_conf_idxs = list(structure["dihedral"].index)
+    if max_conf is not None:
+        processed_conf_idxs = processed_conf_idxs[:max_conf]
+
+    failed_conf_idxs = set(unsuccessful_results.keys())
+    successful_conf_idxs = [conf_idx for conf_idx in processed_conf_idxs if conf_idx not in failed_conf_idxs]
+
+    logging.info(
+        "Conformer reconstruction summary: attempted=%d successful=%d failed=%d",
+        len(processed_conf_idxs),
+        len(successful_conf_idxs),
+        len(failed_conf_idxs),
+    )
+    if failed_conf_idxs:
+        failed_str = " ".join(str(conf_idx) for conf_idx in sorted(failed_conf_idxs))
+        logging.info(f"Failed conformer indices: {failed_str}")
 
     # Post-process and dump data
     def get_structure_from_coords(coords: List[pd.DataFrame]) -> Dict[str, Any]:
@@ -144,32 +176,36 @@ def reconstruct(
     if reconstruct_sidechains:
         logging.info("Reconstructing sidechains")
 
-        with open(RECONSTRUCTION_DATA_PATH, "rb") as f:
-            reconstruction_config = pickle.load(f)
+        if len(successful_conf_idxs) == 0:
+            logging.warning("No successful conformers; skipping sidechain reconstruction")
+        else:
+            structure_filtered = subset_structure_conformers(structure, successful_conf_idxs)
 
-        coords_opt = result[1]
-        structure_opt = get_structure_from_coords(coords_opt)
+            with open(RECONSTRUCTION_DATA_PATH, "rb") as f:
+                reconstruction_config = pickle.load(f)
 
-        # Merge with original sidechain predictions
-        sample = merge_samples(structure_opt, structure)
+            structure_opt = get_structure_from_coords(coords_opt)
 
-        mol_opt_no_h = Chem.RemoveHs(mol_opt)
-        mc = Macrocycle(
-            mol_opt_no_h,
-            reconstruction_config,
-            coords=False,
-            copy=True,
-            verify=True,
-        )
-        reconstructor = Reconstructor(mc)
+            # Merge with original sidechain predictions for the successful conformers only
+            sample = merge_samples(structure_opt, structure_filtered)
 
-        internals_tensor = reconstructor.parse_internals(sample)
-        index_tensor = reconstructor.stacked_tuples
+            mol_opt_no_h = Chem.RemoveHs(mol_opt)
+            mc = Macrocycle(
+                mol_opt_no_h,
+                reconstruction_config,
+                coords=False,
+                copy=True,
+                verify=True,
+            )
+            reconstructor = Reconstructor(mc)
 
-        positions = reconstructor.reconstruct(internals_tensor, index_tensor)
-        mol_opt = set_rdkit_geometries(
-            mol_opt_no_h, positions, add_hydrogens=add_hydrogens, copy=True
-        )
+            internals_tensor = reconstructor.parse_internals(sample)
+            index_tensor = reconstructor.stacked_tuples
+
+            positions = reconstructor.reconstruct(internals_tensor, index_tensor)
+            mol_opt = set_rdkit_geometries(
+                mol_opt_no_h, positions, add_hydrogens=add_hydrogens, copy=True
+            )
 
     mol_opt_path = mol_opt_dir / mol_name
     save_pickle(mol_opt_path, mol_opt)
