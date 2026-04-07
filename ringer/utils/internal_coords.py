@@ -680,11 +680,7 @@ class RingInternalCoordinates(InternalCoordinates):
 
         if skip_opt:
             xyz_opt = xyz0
-
-            class DummyResult:
-                success = True
-
-            result = DummyResult
+            result = OptimizeResult(success=True, message="Optimization skipped")
         else:
             # Transform to canonical orientation and position
             trans_mat = compute_canonical_transform(xyz0)
