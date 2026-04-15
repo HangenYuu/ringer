@@ -55,6 +55,31 @@ def compute_diag_rmsd_from_map(
     return diag
 
 
+def compute_diag_rmsd(
+    probe_mol: Chem.Mol,
+    ref_mol: Chem.Mol,
+    conf_ids_probe: Optional[List[int]] = None,
+    conf_ids_ref: Optional[List[int]] = None,
+    ncpu: int = 1,
+) -> np.ndarray:
+    """Mirror of evaluation.compute_rmsd_matrix but only for corresponding
+    conformer pairs (diagonal)."""
+    probe_mol = Chem.RemoveHs(probe_mol)
+    ref_mol = Chem.RemoveHs(ref_mol)
+
+    atom_map = evaluation.get_atom_map(probe_mol, ref_mol)
+    atom_map = [list(map_.items()) for map_ in atom_map]
+
+    return compute_diag_rmsd_from_map(
+        probe_mol,
+        ref_mol,
+        atom_map,
+        conf_ids_probe=conf_ids_probe,
+        conf_ids_ref=conf_ids_ref,
+        ncpu=ncpu,
+    )
+
+
 def compute_diag_ring_rmsd(
     probe_mol: Chem.Mol,
     ref_mol: Chem.Mol,
@@ -210,6 +235,13 @@ def compute_metrics(
         conf_ids_probe=probe_conf_ids,
         conf_ids_ref=ref_conf_ids,
     )
+    diag_rmsd = compute_diag_rmsd(
+        probe_mol,
+        ref_mol,
+        conf_ids_probe=probe_conf_ids,
+        conf_ids_ref=ref_conf_ids,
+        ncpu=ncpu,
+    )
 
     rrmsd_pass_count = int(np.count_nonzero(diag_ring_rmsd <= rrmsd_threshold))
     rtfd_pass_count = int(np.count_nonzero(diag_ring_tfd <= rtfd_threshold))
@@ -222,6 +254,7 @@ def compute_metrics(
         "num_pairs_compared": num_pairs,
         "probe_conf_ids": probe_conf_ids,
         "ref_conf_ids": ref_conf_ids,
+        "diag_rmsd": diag_rmsd,
         "diag_ring_rmsd": diag_ring_rmsd,
         "diag_ring_tfd": diag_ring_tfd,
         "thresholds": {
@@ -229,6 +262,8 @@ def compute_metrics(
             "ring-tfd": float(rtfd_threshold),
         },
         "summary": {
+            "rmsd_mean": float(diag_rmsd.mean()),
+            "rmsd_median": float(np.median(diag_rmsd)),
             "ring_rmsd_mean": float(diag_ring_rmsd.mean()),
             "ring_rmsd_median": float(np.median(diag_ring_rmsd)),
             "ring_tfd_mean": float(diag_ring_tfd.mean()),
