@@ -163,3 +163,5 @@ logs/
 jobscripts/
 *.o*
 CLAUDE.md
+AGENTS.md
+QWEN.md
