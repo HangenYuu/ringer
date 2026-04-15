@@ -193,6 +193,7 @@ def compute_metrics(
     out_dir: str = "metrics_corresponding",
     rrmsd_threshold: float = 0.10,
     rtfd_threshold: float = 0.05,
+    rmsd_threshold: float = 0.75,
     ncpu: int = 1,
 ) -> None:
     output_dir = Path(out_dir)
@@ -245,8 +246,10 @@ def compute_metrics(
 
     rrmsd_pass_count = int(np.count_nonzero(diag_ring_rmsd <= rrmsd_threshold))
     rtfd_pass_count = int(np.count_nonzero(diag_ring_tfd <= rtfd_threshold))
+    rmsd_pass_count = int(np.count_nonzero(diag_rmsd <= rmsd_threshold))
     rrmsd_pass_fraction = rrmsd_pass_count / num_pairs
     rtfd_pass_fraction = rtfd_pass_count / num_pairs
+    rmsd_pass_fraction = rmsd_pass_count / num_pairs
 
     results: Dict[str, Any] = {
         "probe_mol": str(probe_path),
@@ -258,12 +261,16 @@ def compute_metrics(
         "diag_ring_rmsd": diag_ring_rmsd,
         "diag_ring_tfd": diag_ring_tfd,
         "thresholds": {
+            "rmsd": float(rmsd_threshold),
             "ring-rmsd": float(rrmsd_threshold),
             "ring-tfd": float(rtfd_threshold),
         },
         "summary": {
             "rmsd_mean": float(diag_rmsd.mean()),
             "rmsd_median": float(np.median(diag_rmsd)),
+            "rmsd_below_threshold_count": rmsd_pass_count,
+            "rmsd_below_threshold_fraction": rmsd_pass_fraction,
+            "rmsd_below_threshold_percent": 100.0 * rmsd_pass_fraction,
             "ring_rmsd_mean": float(diag_ring_rmsd.mean()),
             "ring_rmsd_median": float(np.median(diag_ring_rmsd)),
             "ring_tfd_mean": float(diag_ring_tfd.mean()),
@@ -294,6 +301,13 @@ def compute_metrics(
         rtfd_pass_count,
         num_pairs,
         100.0 * rtfd_pass_fraction,
+    )
+    logging.info(
+        "RMSD <= %.3f: %d/%d (%.2f%%)",
+        rmsd_threshold,
+        rmsd_pass_count,
+        num_pairs,
+        100.0 * rmsd_pass_fraction,
     )
     logging.info("Saved corresponding metrics to %s", out_path)
 
