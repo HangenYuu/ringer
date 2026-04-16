@@ -4,7 +4,7 @@ import logging
 import pickle
 import re
 from pathlib import Path
-from typing import Any, List, Set, Union
+from typing import Any, Set, Union
 
 import typer
 from rdkit import Chem
