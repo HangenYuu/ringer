@@ -80,7 +80,7 @@ def process_directory(input_dir, means_path, output_csv, n_jobs, threshold_pct):
 
     print(f"Found {len(pickle_paths)} molecules in {input_dir}")
 
-    all_worst_rows = []
+    all_bond_rows = []
     for i, pickle_path in enumerate(pickle_paths):
         mol_name = pickle_path.stem
         with open(pickle_path, "rb") as source:
@@ -103,13 +103,13 @@ def process_directory(input_dir, means_path, output_csv, n_jobs, threshold_pct):
             f"worst abs_delta={worst_delta:.4f} A ({worst_pct:.2f}%)"
         )
 
-        worst_per_conf.insert(0, "molecule", mol_name)
-        all_worst_rows.append(worst_per_conf)
+        df.insert(0, "molecule", mol_name)
+        all_bond_rows.append(df)
 
-    if all_worst_rows:
-        combined = pd.concat(all_worst_rows, ignore_index=True)
+    if all_bond_rows:
+        combined = pd.concat(all_bond_rows, ignore_index=True)
         combined.to_csv(output_csv, index=False)
-        print(f"\nWrote worst-per-conformer results to {output_csv} ({len(combined)} rows)")
+        print(f"\nWrote all-bonds results to {output_csv} ({len(combined)} rows)")
     else:
         print("No molecules processed.")
 
